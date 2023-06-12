@@ -1,13 +1,12 @@
 ﻿using Azure.Messaging.ServiceBus;
-using Microsoft.Azure.Amqp.Framing;
 using System.Diagnostics;
 
 // Parse command-line arguments
-(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers, int prefetchCount) = ParseCommandCommandLineArgs(args);
+(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers, int maxMessagesPrBatch) = ParseCommandCommandLineArgs(args);
 if (string.IsNullOrWhiteSpace(serviceBusConnectionString) || string.IsNullOrWhiteSpace(queueName))
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.WriteLine("Usage: -c <connection-string> -q <queue-name> [-t <max-concurrent-receivers> -pc <prefetch-count>]");
+    Console.WriteLine("Usage: -c <connection-string> -q <queue-name> [-mcr <max-concurrent-receivers> -mmb <max-messages-per-batch>]");
     Console.ResetColor();
     return;
 }
@@ -21,15 +20,11 @@ stopwatch.Start();
 var deadLetterQueueClient = new ServiceBusClient(serviceBusConnectionString);
 var mainQueueClient = new ServiceBusClient(serviceBusConnectionString);
 
-var deadLetterReceiver = deadLetterQueueClient.CreateReceiver(deadLetterQueueName, new ServiceBusReceiverOptions {  PrefetchCount = prefetchCount });
-var mainQueueSender = mainQueueClient.CreateSender(queueName);
-
-
 // Start multiple threads that increment the counter asynchronously
 Task[] tasks = new Task[maxConcurrentReceivers];
 for (int i = 0; i < tasks.Length; i++)
 {
-    tasks[i] = MoveMessages(deadLetterReceiver, mainQueueSender);
+    tasks[i] = MoveMessages(deadLetterQueueClient, mainQueueClient);
 }
 bool isRunning = true;
 
@@ -51,13 +46,14 @@ Console.WriteLine("");
 Console.WriteLine($"Succesfully moved DLQ-messages back into '{queueName}'.");
 Console.WriteLine("Press any key to exit...");
 Console.ReadKey();
+Console.ResetColor();
 
-(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers, int prefetchCount) ParseCommandCommandLineArgs(string[] args)
+(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers, int maxMessagesPrBatch) ParseCommandCommandLineArgs(string[] args)
 {
     string serviceBusConnectionString = "";
     string queueName = "";
     int maxConcurrentReceivers = 1;
-    int prefetchCount = 0;
+    int maxMessagesPrBatch = 25;
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -69,26 +65,33 @@ Console.ReadKey();
         {
             queueName = args[i + 1];
         }
-        else if (args[i] == "-t" && i + 1 < args.Length)
+        else if (args[i] == "-mcr" && i + 1 < args.Length)
         {
             _ = int.TryParse(args[i + 1], out maxConcurrentReceivers);
         }
-        else if (args[i] == "-pc" && i + 1 < args.Length)
+        else if (args[i] == "-mmb" && i + 1 < args.Length)
         {
-            _ = int.TryParse(args[i + 1], out prefetchCount);
+            _ = int.TryParse(args[i + 1], out maxMessagesPrBatch);
         }
     }
 
-    return (serviceBusConnectionString, queueName, maxConcurrentReceivers, prefetchCount);
+    return (serviceBusConnectionString, queueName, maxConcurrentReceivers, maxMessagesPrBatch);
 }
 
-async Task MoveMessages(ServiceBusReceiver deadLetterReceiver, ServiceBusSender mainQueueSender)
+async Task MoveMessages(ServiceBusClient receiverClient, ServiceBusClient senderClient)
 {
+    var deadLetterReceiver = receiverClient.CreateReceiver(deadLetterQueueName);
+    var mainQueueSender = senderClient.CreateSender(queueName);
+
     while (true)
     {
-        var receivedMessages = await deadLetterReceiver.ReceiveMessagesAsync(50);
+        var receivedMessages = await deadLetterReceiver.ReceiveMessagesAsync(maxMessagesPrBatch, TimeSpan.FromMilliseconds(1000));
         if (receivedMessages.Count == 0)
+        {
+            await deadLetterReceiver.CloseAsync();
+            await mainQueueSender.CloseAsync();
             return;
+        }
 
         var clonedMessages = new List<ServiceBusMessage>(receivedMessages.Count);
         foreach (var receivedMessage in receivedMessages)
@@ -114,18 +117,24 @@ void PrintProgress()
 {
     while (isRunning)
     {
-        Console.Clear();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"Moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
-        Console.WriteLine("");
+        double throughput = 0;
+        if (movedMessagesCount > 0 )
+            throughput = movedMessagesCount / stopwatch.Elapsed.TotalSeconds;
 
-        Console.WriteLine($"Elapsed Time: {FormatElapsedTime()}");
+        Console.Clear();
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine($"Number of messages moved: {movedMessagesCount:N0}");
+        Console.WriteLine($"Moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine($"Number of threads: {maxConcurrentReceivers}");
-        Console.WriteLine($"Pre-Fetch: {prefetchCount}");
+        Console.WriteLine($"Messages pr batch: {maxMessagesPrBatch}");
+        Console.WriteLine("");
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"Elapsed Time: {FormatElapsedTime()}");
+        Console.WriteLine($"Number of messages moved: {movedMessagesCount:N0}");
+        Console.WriteLine($"Throughput: {throughput:N0} msgs/sec");
         Console.ResetColor();
+
 
         Thread.Sleep(2000);
     }
