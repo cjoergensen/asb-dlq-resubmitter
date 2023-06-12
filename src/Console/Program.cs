@@ -112,11 +112,11 @@ void PrintProgress()
         Console.WriteLine($"Moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
         Console.WriteLine("");
 
-        Console.WriteLine("Elapsed Time: {0}", FormatElapsedTime());
+        Console.WriteLine($"Elapsed Time: {FormatElapsedTime()}");
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("Number of messages moved: {0}", movedMessagesCount);
+        Console.WriteLine($"Number of messages moved: {movedMessagesCount:N0}");
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("Number of threads: {0}", maxConcurrentReceivers);
+        Console.WriteLine($"Number of threads: {maxConcurrentReceivers}");
         Console.ResetColor();
 
         Thread.Sleep(2000);
