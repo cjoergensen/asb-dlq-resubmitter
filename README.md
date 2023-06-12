@@ -27,3 +27,9 @@ If you want to increase the number of concurrent receivers, you can use the `-mc
 The default value for the maximum number of messages per batch is 25. This means that each receiver will attempt to receive and re-submit 25 messages per batch. 
 
 If you want to increase the number of messages per batch, you can use the `-mmb` parameter.
+
+## Output
+
+Progress will be displayed on the console, including the elapsed time, the number of messages moved, and the throughput:
+
+![output](https://github.com/cjoergensen/asb-dlq-resubmitter/assets/8087733/2435466f-7e79-4a75-8468-f0b00f63fd91)
