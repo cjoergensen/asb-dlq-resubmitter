@@ -1,27 +1,23 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using Azure.Messaging.ServiceBus;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.Reflection;
 
-
+// TODO: Paramaterize these values
 const string ServiceBusConnectionString = "";
 const string QueueName = "";
 const string DeadLetterQueueName = QueueName + "/$DeadLetterQueue";
 const int MaxConcurrentReceivers = 10; // Maximum number of concurrent receivers
 
+int movedMessagesCount = 0;
+
 Stopwatch stopwatch = new();
 stopwatch.Start();
-
 
 var deadLetterQueueClient = new ServiceBusClient(ServiceBusConnectionString);
 var mainQueueClient = new ServiceBusClient(ServiceBusConnectionString);
 
 var deadLetterReceiver = deadLetterQueueClient.CreateReceiver(DeadLetterQueueName);
 var mainQueueSender = mainQueueClient.CreateSender(QueueName);
-
-
-int movedMessagesCount = 0;
 
 
 // Start multiple threads that increment the counter asynchronously
@@ -50,7 +46,7 @@ Console.ForegroundColor = ConsoleColor.Green;
 Console.WriteLine($"DONE moving messages from '{DeadLetterQueueName}' back to main queue '{QueueName}'.");
 Console.WriteLine("");
 
-Console.WriteLine("Elapsed Time: {0}", GetElapsedTime());
+Console.WriteLine("Elapsed Time: {0}", FormatElapsedTime());
 Console.ForegroundColor = ConsoleColor.Yellow;
 Console.WriteLine("Number of messages moved: {0}", movedMessagesCount);
 Console.ForegroundColor = ConsoleColor.Cyan;
@@ -70,7 +66,7 @@ void PrintProgress()
         Console.WriteLine($"Moving messages from '{DeadLetterQueueName}' back to main queue '{QueueName}'.");
         Console.WriteLine("");
 
-        Console.WriteLine("Elapsed Time: {0}", GetElapsedTime());
+        Console.WriteLine("Elapsed Time: {0}", FormatElapsedTime());
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine("Number of messages moved: {0}", movedMessagesCount);
         Console.ForegroundColor = ConsoleColor.Cyan;
@@ -109,7 +105,7 @@ async Task MoveMessages(ServiceBusReceiver deadLetterReceiver, ServiceBusSender 
     }
 }
 
-string GetElapsedTime()
+string FormatElapsedTime()
 {
     if (stopwatch.Elapsed.TotalHours >= 1)
     {
