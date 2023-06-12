@@ -1,7 +1,6 @@
 ﻿using Azure.Messaging.ServiceBus;
 using System.Diagnostics;
 
-
 // Parse command-line arguments
 (string serviceBusConnectionString, string queueName, int maxConcurrentReceivers) = ParseCommandCommandLineArgs(args);
 if (string.IsNullOrWhiteSpace(serviceBusConnectionString) || string.IsNullOrWhiteSpace(queueName))
@@ -11,7 +10,6 @@ if (string.IsNullOrWhiteSpace(serviceBusConnectionString) || string.IsNullOrWhit
     Console.ResetColor();
     return;
 }
-
 
 string deadLetterQueueName = queueName + "/$DeadLetterQueue";
 int movedMessagesCount = 0;
@@ -24,7 +22,6 @@ var mainQueueClient = new ServiceBusClient(serviceBusConnectionString);
 
 var deadLetterReceiver = deadLetterQueueClient.CreateReceiver(deadLetterQueueName);
 var mainQueueSender = mainQueueClient.CreateSender(queueName);
-
 
 // Start multiple threads that increment the counter asynchronously
 Task[] tasks = new Task[maxConcurrentReceivers];
@@ -47,21 +44,11 @@ backgroundThread.Join();
 await deadLetterQueueClient.DisposeAsync();
 await mainQueueClient.DisposeAsync();
 
-Console.Clear();
 Console.ForegroundColor = ConsoleColor.Green;
-Console.WriteLine($"DONE moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
 Console.WriteLine("");
-
-Console.WriteLine("Elapsed Time: {0}", FormatElapsedTime());
-Console.ForegroundColor = ConsoleColor.Yellow;
-Console.WriteLine("Number of messages moved: {0}", movedMessagesCount);
-Console.ForegroundColor = ConsoleColor.Cyan;
-Console.WriteLine("Number of threads: {0}", maxConcurrentReceivers);
-Console.ResetColor();
-
+Console.WriteLine($"Succesfully moved DLQ-messages back into '{queueName}'.");
 Console.WriteLine("Press any key to exit...");
 Console.ReadKey();
-
 
 (string serviceBusConnectionString, string queueName, int maxConcurrentReceivers) ParseCommandCommandLineArgs(string[] args)
 {
@@ -86,27 +73,6 @@ Console.ReadKey();
     }
 
     return (serviceBusConnectionString, queueName, maxConcurrentReceivers);
-}
-
-
-void PrintProgress()
-{
-    while (isRunning)
-    {
-        Console.Clear();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"Moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
-        Console.WriteLine("");
-
-        Console.WriteLine("Elapsed Time: {0}", FormatElapsedTime());
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("Number of messages moved: {0}", movedMessagesCount);
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("Number of threads: {0}", maxConcurrentReceivers);
-        Console.ResetColor();
-
-        Thread.Sleep(2000);
-    }
 }
 
 async Task MoveMessages(ServiceBusReceiver deadLetterReceiver, ServiceBusSender mainQueueSender)
@@ -134,6 +100,26 @@ async Task MoveMessages(ServiceBusReceiver deadLetterReceiver, ServiceBusSender 
             await deadLetterReceiver.CompleteMessageAsync(receivedMessage);
 
         Interlocked.Add(ref movedMessagesCount, receivedMessages.Count);
+    }
+}
+
+void PrintProgress()
+{
+    while (isRunning)
+    {
+        Console.Clear();
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"Moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
+        Console.WriteLine("");
+
+        Console.WriteLine("Elapsed Time: {0}", FormatElapsedTime());
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("Number of messages moved: {0}", movedMessagesCount);
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine("Number of threads: {0}", maxConcurrentReceivers);
+        Console.ResetColor();
+
+        Thread.Sleep(2000);
     }
 }
 
