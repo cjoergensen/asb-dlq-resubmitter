@@ -1,27 +1,33 @@
-﻿// See https://aka.ms/new-console-template for more information
-using Azure.Messaging.ServiceBus;
+﻿using Azure.Messaging.ServiceBus;
 using System.Diagnostics;
 
-// TODO: Paramaterize these values
-const string ServiceBusConnectionString = "";
-const string QueueName = "";
-const string DeadLetterQueueName = QueueName + "/$DeadLetterQueue";
-const int MaxConcurrentReceivers = 10; // Maximum number of concurrent receivers
 
+// Parse command-line arguments
+(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers) = ParseCommandCommandLineArgs(args);
+if (string.IsNullOrWhiteSpace(serviceBusConnectionString) || string.IsNullOrWhiteSpace(queueName))
+{
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine("Usage: -c <connection-string> -q <queue-name> [-t <max-concurrent-receivers>]");
+    Console.ResetColor();
+    return;
+}
+
+
+string deadLetterQueueName = queueName + "/$DeadLetterQueue";
 int movedMessagesCount = 0;
 
 Stopwatch stopwatch = new();
 stopwatch.Start();
 
-var deadLetterQueueClient = new ServiceBusClient(ServiceBusConnectionString);
-var mainQueueClient = new ServiceBusClient(ServiceBusConnectionString);
+var deadLetterQueueClient = new ServiceBusClient(serviceBusConnectionString);
+var mainQueueClient = new ServiceBusClient(serviceBusConnectionString);
 
-var deadLetterReceiver = deadLetterQueueClient.CreateReceiver(DeadLetterQueueName);
-var mainQueueSender = mainQueueClient.CreateSender(QueueName);
+var deadLetterReceiver = deadLetterQueueClient.CreateReceiver(deadLetterQueueName);
+var mainQueueSender = mainQueueClient.CreateSender(queueName);
 
 
 // Start multiple threads that increment the counter asynchronously
-Task[] tasks = new Task[MaxConcurrentReceivers];
+Task[] tasks = new Task[maxConcurrentReceivers];
 for (int i = 0; i < tasks.Length; i++)
 {
     tasks[i] = MoveMessages(deadLetterReceiver, mainQueueSender);
@@ -43,18 +49,44 @@ await mainQueueClient.DisposeAsync();
 
 Console.Clear();
 Console.ForegroundColor = ConsoleColor.Green;
-Console.WriteLine($"DONE moving messages from '{DeadLetterQueueName}' back to main queue '{QueueName}'.");
+Console.WriteLine($"DONE moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
 Console.WriteLine("");
 
 Console.WriteLine("Elapsed Time: {0}", FormatElapsedTime());
 Console.ForegroundColor = ConsoleColor.Yellow;
 Console.WriteLine("Number of messages moved: {0}", movedMessagesCount);
 Console.ForegroundColor = ConsoleColor.Cyan;
-Console.WriteLine("Number of threads: {0}", MaxConcurrentReceivers);
+Console.WriteLine("Number of threads: {0}", maxConcurrentReceivers);
 Console.ResetColor();
 
 Console.WriteLine("Press any key to exit...");
 Console.ReadKey();
+
+
+(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers) ParseCommandCommandLineArgs(string[] args)
+{
+    string serviceBusConnectionString = "";
+    string queueName = "";
+    int maxConcurrentReceivers = 1;
+
+    for (int i = 0; i < args.Length; i++)
+    {
+        if (args[i] == "-c" && i + 1 < args.Length)
+        {
+            serviceBusConnectionString = args[i + 1];
+        }
+        else if (args[i] == "-q" && i + 1 < args.Length)
+        {
+            queueName = args[i + 1];
+        }
+        else if (args[i] == "-t" && i + 1 < args.Length)
+        {
+            _ = int.TryParse(args[i + 1], out maxConcurrentReceivers);
+        }
+    }
+
+    return (serviceBusConnectionString, queueName, maxConcurrentReceivers);
+}
 
 
 void PrintProgress()
@@ -63,14 +95,14 @@ void PrintProgress()
     {
         Console.Clear();
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"Moving messages from '{DeadLetterQueueName}' back to main queue '{QueueName}'.");
+        Console.WriteLine($"Moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
         Console.WriteLine("");
 
         Console.WriteLine("Elapsed Time: {0}", FormatElapsedTime());
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine("Number of messages moved: {0}", movedMessagesCount);
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("Number of threads: {0}", MaxConcurrentReceivers);
+        Console.WriteLine("Number of threads: {0}", maxConcurrentReceivers);
         Console.ResetColor();
 
         Thread.Sleep(2000);
