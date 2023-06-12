@@ -1,12 +1,13 @@
 ﻿using Azure.Messaging.ServiceBus;
+using Microsoft.Azure.Amqp.Framing;
 using System.Diagnostics;
 
 // Parse command-line arguments
-(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers) = ParseCommandCommandLineArgs(args);
+(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers, int prefetchCount) = ParseCommandCommandLineArgs(args);
 if (string.IsNullOrWhiteSpace(serviceBusConnectionString) || string.IsNullOrWhiteSpace(queueName))
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.WriteLine("Usage: -c <connection-string> -q <queue-name> [-t <max-concurrent-receivers>]");
+    Console.WriteLine("Usage: -c <connection-string> -q <queue-name> [-t <max-concurrent-receivers> -pc <prefetch-count>]");
     Console.ResetColor();
     return;
 }
@@ -20,8 +21,9 @@ stopwatch.Start();
 var deadLetterQueueClient = new ServiceBusClient(serviceBusConnectionString);
 var mainQueueClient = new ServiceBusClient(serviceBusConnectionString);
 
-var deadLetterReceiver = deadLetterQueueClient.CreateReceiver(deadLetterQueueName);
+var deadLetterReceiver = deadLetterQueueClient.CreateReceiver(deadLetterQueueName, new ServiceBusReceiverOptions {  PrefetchCount = prefetchCount });
 var mainQueueSender = mainQueueClient.CreateSender(queueName);
+
 
 // Start multiple threads that increment the counter asynchronously
 Task[] tasks = new Task[maxConcurrentReceivers];
@@ -50,11 +52,12 @@ Console.WriteLine($"Succesfully moved DLQ-messages back into '{queueName}'.");
 Console.WriteLine("Press any key to exit...");
 Console.ReadKey();
 
-(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers) ParseCommandCommandLineArgs(string[] args)
+(string serviceBusConnectionString, string queueName, int maxConcurrentReceivers, int prefetchCount) ParseCommandCommandLineArgs(string[] args)
 {
     string serviceBusConnectionString = "";
     string queueName = "";
     int maxConcurrentReceivers = 1;
+    int prefetchCount = 0;
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -70,16 +73,20 @@ Console.ReadKey();
         {
             _ = int.TryParse(args[i + 1], out maxConcurrentReceivers);
         }
+        else if (args[i] == "-pc" && i + 1 < args.Length)
+        {
+            _ = int.TryParse(args[i + 1], out prefetchCount);
+        }
     }
 
-    return (serviceBusConnectionString, queueName, maxConcurrentReceivers);
+    return (serviceBusConnectionString, queueName, maxConcurrentReceivers, prefetchCount);
 }
 
 async Task MoveMessages(ServiceBusReceiver deadLetterReceiver, ServiceBusSender mainQueueSender)
 {
     while (true)
     {
-        var receivedMessages = await deadLetterReceiver.ReceiveMessagesAsync(20);
+        var receivedMessages = await deadLetterReceiver.ReceiveMessagesAsync(50);
         if (receivedMessages.Count == 0)
             return;
 
@@ -117,6 +124,7 @@ void PrintProgress()
         Console.WriteLine($"Number of messages moved: {movedMessagesCount:N0}");
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine($"Number of threads: {maxConcurrentReceivers}");
+        Console.WriteLine($"Pre-Fetch: {prefetchCount}");
         Console.ResetColor();
 
         Thread.Sleep(2000);
