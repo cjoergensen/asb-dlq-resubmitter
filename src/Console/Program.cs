@@ -20,7 +20,7 @@ stopwatch.Start();
 var deadLetterQueueClient = new ServiceBusClient(serviceBusConnectionString);
 var mainQueueClient = new ServiceBusClient(serviceBusConnectionString);
 
-// Start multiple threads that increment the counter asynchronously
+// Start multiple receivers to move messages in parallel
 Task[] tasks = new Task[maxConcurrentReceivers];
 for (int i = 0; i < tasks.Length; i++)
 {
@@ -28,22 +28,21 @@ for (int i = 0; i < tasks.Length; i++)
 }
 bool isRunning = true;
 
-// Start the background thread
-Thread backgroundThread = new(PrintProgress);
-backgroundThread.Start();
+// Start the background thread that prints progress
+Thread progressThread = new(PrintProgress);
+progressThread.Start();
 
 // Wait for all tasks to complete
 await Task.WhenAll(tasks);
-
 isRunning = false;
-backgroundThread.Join();
+progressThread.Join();
 
 await deadLetterQueueClient.DisposeAsync();
 await mainQueueClient.DisposeAsync();
 
 Console.ForegroundColor = ConsoleColor.Green;
 Console.WriteLine("");
-Console.WriteLine($"Succesfully moved DLQ-messages back into '{queueName}'.");
+Console.WriteLine($"Succesfully moved DLQ-messages back to main queue '{queueName}'.");
 Console.WriteLine("Press any key to exit...");
 Console.ReadKey();
 Console.ResetColor();
@@ -104,8 +103,8 @@ async Task MoveMessages(ServiceBusClient receiverClient, ServiceBusClient sender
 
             clonedMessages.Add(clonedMessage);
         }
-        await mainQueueSender.SendMessagesAsync(clonedMessages);
 
+        await mainQueueSender.SendMessagesAsync(clonedMessages);
         foreach (var receivedMessage in receivedMessages)
             await deadLetterReceiver.CompleteMessageAsync(receivedMessage);
 
@@ -125,32 +124,27 @@ void PrintProgress()
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine($"Moving messages from '{deadLetterQueueName}' back to main queue '{queueName}'.");
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"Number of threads: {maxConcurrentReceivers}");
+        Console.WriteLine($"Number of Receivers: {maxConcurrentReceivers}");
         Console.WriteLine($"Messages pr batch: {maxMessagesPrBatch}");
         Console.WriteLine("");
 
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"Elapsed Time: {FormatElapsedTime()}");
+        Console.WriteLine($"Elapsed Time: {GetElapsedTimeAsString()}");
         Console.WriteLine($"Number of messages moved: {movedMessagesCount:N0}");
         Console.WriteLine($"Throughput: {throughput:N0} msgs/sec");
         Console.ResetColor();
-
 
         Thread.Sleep(2000);
     }
 }
 
-string FormatElapsedTime()
+string GetElapsedTimeAsString()
 {
     if (stopwatch.Elapsed.TotalHours >= 1)
-    {
         return stopwatch.Elapsed.TotalHours.ToString("0.##") + " hours";
-    }
     
     if (stopwatch.Elapsed.TotalMinutes >= 1)
-    {
         return stopwatch.Elapsed.TotalMinutes.ToString("0.##") + " minutes";
-    }
-        
+
     return stopwatch.Elapsed.TotalSeconds.ToString("0.##") + " seconds";
 }
